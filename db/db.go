@@ -15,8 +15,8 @@ const (
 	dbname   = "movieshare"
 )
 
-// Login logs into the database
-func Login() {
+// OpenDB initializes into the database
+func OpenDB() *sql.DB {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
@@ -25,11 +25,12 @@ func Login() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
 
 	err = db.Ping()
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Println("Successfully connected to database!")
+	return db
 }

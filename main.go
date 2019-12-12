@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,11 +11,17 @@ import (
 	"text/template"
 
 	"movieapp/db"
-	help "movieapp/helpers"
+
+	"github.com/gomodule/redigo/redis"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
+	staticFileDir   = "./static/"
+	templateFileDir = "./templates/"
+
 	apiURL        = "https://movie-database-imdb-alternative.p.rapidapi.com/?r=json&s="
+	imdbSearchURL = "https://www.imdb.com/title/"
 	apiHostHeader = "x-rapidapi-host"
 	apiHostValue  = "movie-database-imdb-alternative.p.rapidapi.com"
 	apiKeyHeader  = "x-rapidapi-key"
@@ -22,11 +29,14 @@ const (
 	spaceFormat   = "%20"
 )
 
-var loginTmpl, homeTmpl, profileTmpl, searchTmpl, shareTmpl *template.Template
-var staticFileDir = "./static/"
-var templateFileDir = "./templates/"
+// Contains data about the user, passed to HTML templates
+var td TemplateData
 
 var un, pass string
+var pgDb *sql.DB
+var loginTmpl, homeTmpl, profileTmpl, searchTmpl, shareTmpl *template.Template
+
+var cache redis.Conn
 
 // TemplateData is passed to the template
 type TemplateData struct {
@@ -35,6 +45,7 @@ type TemplateData struct {
 	User         string
 }
 
+// Search holds generic search data returned from the movie API
 type Search struct {
 	Search       []Data `json:"Search"`
 	TotalResults string `json:"totalResults"`
@@ -50,9 +61,26 @@ type Data struct {
 	ImgURL string `json:"Poster"`
 }
 
-var td TemplateData
+// Creds holds new user infornation
+type Creds struct {
+	Password  string `json:"password", db:"pword"`
+	Username  string `json:"username", db:"uname"`
+	Firstname string `json:"firstname", db:"fname"`
+	Lastname  string `json:"lastname", db:"lname"`
+	Email     string `json:"email", db:"email"`
+}
 
 func init() {
+	// initialize db
+	pgDb = db.OpenDB()
+
+	// initialize redis connection for sessions and assign to cache var
+	conn, err := redis.DialURL("redis://localhost")
+	if err != nil {
+		panic(err)
+	}
+	cache = conn
+
 	// create and cache templates
 	homeTmpl, loginTmpl, profileTmpl, searchTmpl, shareTmpl = template.Must(template.ParseFiles(templateFileDir+"home.html")),
 		template.Must(template.ParseFiles(templateFileDir+"login.html")),
@@ -63,75 +91,66 @@ func init() {
 }
 
 func main() {
-	db.Login()
+	defer pgDb.Close()
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
+	// Handle templates
 	http.HandleFunc("/", loginHandler)
 	http.HandleFunc("/home", homeHandler)
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/searchActive", searchActiveHandler)
 	http.HandleFunc("/profile", profileHandler)
 	http.HandleFunc("/share", shareHandler)
+	http.HandleFunc("/signup", signupHandler)
 
 	log.Println("listening...")
 	http.ListenAndServe(":3000", nil)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
-	n := "loginHandler"
+	printData("loginHandler", r)
 	if err := loginTmpl.ExecuteTemplate(w, "login", nil); err != nil {
 		log.Printf("Failed to execute template: %+v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
-	printData(n, r)
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	n := "homeHandler"
-	printData(n, r)
+	printData("homeHandler", r)
 
-	un = r.FormValue("username")
-	pass = r.FormValue("pass")
-
-	fmt.Printf("Username: %s\nPassword: %s\n", un, pass)
-
-	unCheck := help.IsEmpty(un)
-	passCheck := help.IsEmpty(pass)
-
-	if unCheck || passCheck {
-		fmt.Fprintf(w, "ErrorCode is -10 : Empty data found in the form.")
-		return
+	creds := Creds{
+		Username: r.FormValue("username"),
+		Password: r.FormValue("pass"),
 	}
+	fmt.Printf("Username: %s\nPassword: %s\n", creds.Username, creds.Password)
 
-	td.User = un
-
-	dbPwd := "1234"
-	dbUn := "stevanc"
-
-	if dbPwd == pass && dbUn == un {
+	if login(creds) {
 		fmt.Println("Login Successful")
+		td.User = creds.Username
+
 		if err := homeTmpl.ExecuteTemplate(w, "home", td); err != nil {
 			log.Printf("Failed to execute template: %+v", err)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
-	} else {
-		fmt.Println("Login Failed")
-		fmt.Fprintln(w, "Login Failed!")
+		return
 	}
+	fmt.Println("Login Failed")
+	loginHandler(w, r)
 }
 
 func profileHandler(w http.ResponseWriter, r *http.Request) {
-	n := "profileHandler"
+	printData("profileHandler", r)
 	if err := profileTmpl.ExecuteTemplate(w, "profile", td); err != nil {
 		log.Printf("Failed to execute template: %+v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
-	printData(n, r)
 }
 
 func searchActiveHandler(w http.ResponseWriter, r *http.Request) {
-	n := "searchHandler"
-	printData(n, r)
+	printData("searchActiveHandler", r)
 
 	var searchArr []string
 	var searchResults Search
@@ -163,6 +182,7 @@ func searchActiveHandler(w http.ResponseWriter, r *http.Request) {
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			fmt.Printf("%T\n%s\n%v\n", err, err, err)
+			w.WriteHeader(http.StatusBadRequest)
 		}
 		defer res.Body.Close()
 
@@ -172,6 +192,7 @@ func searchActiveHandler(w http.ResponseWriter, r *http.Request) {
 		err = json.Unmarshal(response, &searchResults)
 		if err != nil {
 			fmt.Printf("%T\n%s\n%v\n", err, err, err)
+			w.WriteHeader(http.StatusBadRequest)
 		}
 
 		td.MovieData = searchResults.Search
@@ -179,32 +200,82 @@ func searchActiveHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := searchTmpl.ExecuteTemplate(w, "search", td); err != nil {
 			log.Printf("Failed to execute template: %+v", err)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
 	}
 
 	if err := searchTmpl.ExecuteTemplate(w, "search", td); err != nil {
 		log.Printf("Failed to execute template: %+v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
-	n := "searchHandler"
-	printData(n, r)
+	printData("searchHandler", r)
 
 	if err := searchTmpl.ExecuteTemplate(w, "search", td); err != nil {
 		log.Printf("Failed to execute template: %+v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
 func shareHandler(w http.ResponseWriter, r *http.Request) {
-	n := "shareHandler"
+	printData("shareHandler", r)
 	if err := shareTmpl.ExecuteTemplate(w, "share", td); err != nil {
 		log.Printf("Failed to execute template: %+v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
-	printData(n, r)
+}
+
+func signupHandler(w http.ResponseWriter, r *http.Request) {
+	printData("signupHandler", r)
+	// Parse and decode request into 'creds' struct
+	creds := Creds{}
+	err := json.NewDecoder(r.Body).Decode(&creds)
+	if err != nil {
+		fmt.Printf("error decoding: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(creds.Password), 8)
+
+	if _, err := pgDb.Query(`INSERT INTO users values ($1, $2, $3, $4, $5, $6)`,
+		0,
+		creds.Username,
+		string(hashedPassword),
+		creds.Firstname,
+		creds.Lastname,
+		creds.Email); err != nil {
+		fmt.Printf("error inserting new user: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 }
 
 func printData(name string, r *http.Request) {
 	fmt.Printf("%s - Request Method: %s Request URL: %s\n", name, r.Method, r.URL.EscapedPath())
+}
+
+func login(creds Creds) bool {
+	loginStmt := `SELECT pword FROM users WHERE uname=$1`
+	row := pgDb.QueryRow(loginStmt, creds.Username)
+
+	storedCreds := Creds{}
+	switch err := row.Scan(&storedCreds.Password); err {
+	case sql.ErrNoRows:
+		fmt.Println("No rows returned, username not found!")
+		return false
+	case nil:
+		if err = bcrypt.CompareHashAndPassword([]byte(storedCreds.Password), []byte(creds.Password)); err != nil {
+			fmt.Println("Incorrect Password!")
+			return false
+		}
+		return true
+	default:
+		fmt.Printf("Error during login: %s\n", err)
+		return false
+	}
 }

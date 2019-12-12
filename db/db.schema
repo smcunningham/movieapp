@@ -1,0 +1,19 @@
+CREATE TABLE users (
+	user_id serial PRIMARY KEY,
+	uname text UNIQUE NOT NULL,
+	pword text NOT NULL,
+	fname text NOT NULL,
+	lname text NOT NULL,
+	email text NOT NULL,
+	plists integer[]
+);
+
+INSERT INTO users (uname, pword, fname, lname, email)
+	VALUES ('stevanc', '1234', 'stevan', 'cunningham', 'stevanc08@gmail.com');
+
+CREATE TABLE playlists (
+	plist_id serial PRIMARY KEY,
+	plist_owner_id integer NOT NULL REFERENCES users(user_id), 
+	plist_name varchar(100) UNIQUE NOT NULL,
+	plist_contents text[] NOT NULL
+);

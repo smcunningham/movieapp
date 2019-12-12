@@ -1,9 +1,91 @@
 {{define "profile"}}
 <!DOCTYPE html>
-<html lang="en">
-  <head></head>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="icon" href="/static/favicon.ico">
+
+    <title>Profile - MovieShare</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="/static/css/jumbotron/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="/static/css/jumbotron/jumbotron.css" rel="stylesheet">
+  </head>
+
   <body>
-      <p>Profile Page</p>
+
+    <nav class="navbar navbar-toggleable-md navbar-inverse fixed-top bg-inverse">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <a class="navbar-brand" href="/home">MovieShare</a>
+
+      <div class="collapse navbar-collapse" id="navbarsExampleDefault">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/profile">Profile</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/share">Share</a>
+          </li>
+        </ul>
+        <form class="form-inline my-2 my-lg-0" action="/searchActive" method="post">
+          <input class="form-control mr-sm-2" type="text" placeholder="Search" name="searchword">
+          <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
+        </form>
+      </div>
+    </nav>
+
+    <!--Div Container -->
+    <div class="jumbotron">
+      <div class="container">
+        <div class="container">
+          <h2 class="display-3">Profile</h2>
+          <p>User: {{.User}}</p>
+          <p>Playlists: </p>
+        </div>
+      </div>
+    </div>
+
+    <!--Div Container-->
+    <div class="container">
+    </div>
+    <div class="container">
+      <!-- Row of columns -->
+      <div class="row">
+        <div class="col-md-4">                                                                                                                                                                             
+          <h2>Search Movies</h2>
+          <p>Search through the database for your favorite movies, and get create your own playlist.</p>
+          <p><a class="btn btn-secondary" href="/search" role="button">View details &raquo;</a></p>
+        </div>
+        <div class="col-md-4">
+          <h2>Your Playlist</h2>
+          <p>View and edit your playlist. From this menu you'll be able to view your favorite movies, along with key information about them!</p>
+          <p><a class="btn btn-secondary" href="/profile" role="button">View details &raquo;</a></p>
+       </div>
+        <div class="col-md-4">
+          <h2>Share</h2>
+          <p>Share your playlist with friends, and invite them to create their own!</p>
+          <p><a class="btn btn-secondary" href="/share" role="button">View details &raquo;</a></p>
+        </div>
+      </div>
+      <hr>
+      <footer>
+        <p>&copy; scooba 2019</p>
+      </footer>
+    </div> <!-- /container -->
+
+    <!-- Bootstrap core JavaScript================================= -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://code.jquery.com/jquery-3.1.1.slim.min.js" integrity="sha384-A7FZj7v+d/sdmMqp/nOQwliLvUsJfDHW+k9Omg/a/EheAdgtzNs3hpfag6Ed950n" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery.min.js"><\/script>')</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tether/1.4.0/js/tether.min.js" integrity="sha384-DztdAPBWPRXSA/3eYEEUWrWCy7G5KFbe8fFjk5JAIxUYHKkDx6Qin1DkWx51bBrb" crossorigin="anonymous"></script>
+    <script src="/static/css/jumbotron/bootstrap.min.css"></script>
+    <!-- IE10 viewport hack for Surface/desktop Windows 8 bug -->
+    <script src="/static/js/ie10-viewport-bug-workaround.js"></script>
   </body>
 </html>
 {{end}}
